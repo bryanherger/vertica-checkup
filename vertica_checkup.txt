@@ -1,0 +1,41 @@
+## Run the SQL script using a DBADMIN account that can read system tables:
+vsql -a -U <dbadmin> -w <PASS> -f vertica_checkup.sql &> vcheckup.out
+and view the output in vcheckup.out.  There are notes embedded in the output to help interpret the results.
+
+#Additional advice and tests based on the results:
+## Check whether non-default configuration parameters still make sense
+
+## Purge delete vectors if too many in a table (big vectors), or too many globally (total count in the thousands).  Vertica will wait until 20% of a table has been deleted before auto-purge, which means millions of rows could be re-processed for every query.  Purge is an intensive task, so it should be run during low usage times or a maintenance window.
+
+## Consider updated projections (e.g., run DataBase Designer) if there are superprojections in use or signs of projection skew
+
+## Review the error and warning tables for common issues and suggested fixes.  Contact support, field team, the forum for persistent or unusual issues
+
+## Check with application owners if it appears someone is putting too much load on any one node.  Drivers or applications may need to be configured to use load balancing.
+
+## Simple check for mergeout / moveout activity (see TM quick check below for more detail, or if you don't have access to vertica.log)
+Go to catalog on any node and run:
+grep -i mergeout vertica.log | wc -l
+grep -i mergeout vertica.log | wc -l
+wc -l vertica.log
+The higher % of logging due to mergeout or moveout indicates TM needs resources.  Few things to check:
+Look at Resource Pool recommendations; TM pool needs enough memory (~5% of total) / concurrency (4-6, not too low or high)
+DIRECT loading if needed
+Speed up so WOS is moved out and smaller ROS are merged out as fast as loading
+Upgrade to 9.2.1 or later for catalog and TM enhancements
+TM can be quite esoteric, so please contact us via forum or support channel for specific issues or workload requirements.
+
+## If lots of UDP and/or spread issues, check for kernel networking settings
+sudo sysctl -a | grep -E 'net|tcp|udp'
+I often find the following need to be increased to the shown minimums ("mem" buffers may need to be even higher for > 10 GbE bond channels):
+net.core.netdev_max_backlog=100000
+net.core.rmem_max=16777216
+net.core.somaxconn=1024
+net.core.wmem_default=262144
+net.core.wmem_max=16777216
+net.ipv4.tcp_mem=16777216 16777216 16777216
+net.ipv4.tcp_rmem=8192 262144 8388608
+net.ipv4.tcp_wmem=8192 262144 8388608
+net.ipv4.udp_rmem_min=16384
+net.ipv4.udp_wmem_min=16384
+vm.dirty_ratio=5
