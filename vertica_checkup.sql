@@ -71,12 +71,12 @@ select ra.pool_name pool_name, memorysize_kb, maxmemorysize_kb, planned_concurre
 -- notes: Resource Pools can be tuned using a formula to calculate query budget (memory/maxmemory) and recommended concurrency.
 
 -- Check query_events and other tables for issues and suggested fixes
--- notes: all of the below show Vertica internal reporting on information, warnings, errors encountered during operation.  query_events provides suggestions on how to correct issues, while you can
--- refer to documentation, the forum, and Vertica support for advice on how to correct any other issues found in these tables.
-select event_description, suggested_action, count(*) from query_events where suggested_action is not null and suggested_action <> 'Informational; No user action is necessary' group by 1,2 order by 3 desc;
-select /*+label(DatabaseEvents)*/
-event_description, count, first_occurrence, last_occurrence
-from
+-- notes: all of the below show Vertica internal reporting on information, warnings, errors encountered during operation.  query_events and dc_errors provide suggestions on how to correct issues, while you can
+-- refer to documentation, the forum, and Vertica support for advice on how to correct any other issues found in these tables.  Issues observed may repeat between outputs if the same issue affects multiple stages.
+-- events from query_events
+select event_description, suggested_action, count(*) count,min(event_timestamp) first_occurrence, max(event_timestamp) last_occurrence from query_events where suggested_action is not null and suggested_action <> 'Informational; No user action is necessary' group by 1,2 order by 3 desc;
+-- events from execution engine and optimizer
+select event_description, count, first_occurrence, last_occurrence from
 ( (select event_description,count(*) count,min(time) first_occurrence, max(time) last_occurrence
 from dc_execution_engine_events
 where suggested_action <> '' and suggested_action not ilike '%informational%' group by 1 order by 2 desc limit 5)
@@ -84,15 +84,15 @@ union all
 (select event_description,count(*) count,min(time) first_occurrence,max(time) last_occurrence
 from dc_optimizer_events
 where suggested_action <> '' and suggested_action not ilike '%informational%' group by 1 order by 2 desc limit 5)
-) foo;
-select /*+label(errorsAndPanics)*/
-count(*) cnt,error_level_name as error_level,max(message)::varchar(50) message,
-max(log_hint)::varchar(40) resolution_hint,min(time) first_occurrence, max(time) last_occurrence 
+) foo order by 2 desc;
+-- ERROR and PANIC events from dc_errors
+select error_level_name as error_level,max(message)::varchar(50) message,
+max(log_hint)::varchar(40) resolution_hint,count(*) cnt,min(time) first_occurrence, max(time) last_occurrence 
 from dc_errors 
 where (error_level_name='PANIC' ) or ( error_level_name = 'ERROR' and error_code in (8389,197)
 and vertica_code not in (5147,4381,5952,2296,3895,4524,3895) )
 group by error_level_name
-order by 1 desc limit 20; 
+order by 4 desc limit 20; 
 
 -- check connection load balancing.  Are some users or jobs targeting one node for all of their DDL / DML?
 select start_timestamp::date, node_name, user_name, count(*) from query_requests group by start_timestamp::date, node_name, user_name order by start_timestamp::date, node_name, user_name;
